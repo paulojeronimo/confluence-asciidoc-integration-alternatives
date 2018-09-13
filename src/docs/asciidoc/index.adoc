@@ -1,0 +1,281 @@
+= Confluence/Asciidoc integration alternatives
+Paulo Jerônimo <pj@paulojeronimo.com>; {localdatetime}
+:source-highlighter: coderay
+:icons: font
+:toc:
+
+WARNING: None of the alternatives worked with version 6.11.1 (the latest available).
+I will try to put the <<alternative2,alternative 2>> to work with Confluence 6.0.5 (needed for it) soon and update this doc.
+
+== Download/run Confluence using Docker
+
+----
+$ version=6.11.1
+$ mkdir -p confluence-$version
+$ docker run -v $PWD/confluence-$version:/var/atlassian/application-data/confluence --name="confluence" -d -p 8090:8090 -p 8091:8091 atlassian/confluence-server:$version
+$ open http://localhost:8090
+----
+
+[NOTE]
+====
+Follow the indicated steps to retrieve a license.
+====
+
+=== Test the REST API
+
+----
+$ curl -s -u admin:confluence -X GET "http://localhost:8090/rest/api/content/65539" | python -mjson.tool
+----
+
+[source,json]
+----
+{
+    "id": "65539",
+    "type": "page",
+    "status": "current",
+    "title": "What is Confluence? (step 1 of 9)",
+    "space": {
+        "id": 98305,
+        "key": "ds",
+        "name": "Demonstration Space",
+        "type": "global",
+        "_expandable": {
+            "metadata": "",
+            "icon": "",
+            "description": "",
+            "homepage": "/rest/api/content/65538"
+        },
+        "_links": {
+            "self": "http://localhost:8090/rest/api/space/ds",
+            "webui": "/display/ds"
+        }
+    },
+    "history": {
+        "latest": true,
+        "createdBy": {
+            "type": "anonymous",
+            "profilePicture": {
+                "path": "/s/en_GB/7801/34aa5eb798330caaa3c61c10a6018f3a6d596eac/_/images/icons/profilepics/anonymous.svg",
+                "width": 48,
+                "height": 48,
+                "isDefault": true
+            },
+            "displayName": "Anonymous"
+        },
+        "createdDate": "2018-01-23T14:22:06.113Z",
+        "_expandable": {
+            "lastUpdated": "",
+            "previousVersion": "",
+            "contributors": "",
+            "nextVersion": ""
+        },
+        "_links": {
+            "self": "http://localhost:8090/rest/api/content/65539/history"
+        }
+    },
+    "version": {
+        "by": {
+            "type": "anonymous",
+            "profilePicture": {
+                "path": "/s/en_GB/7801/34aa5eb798330caaa3c61c10a6018f3a6d596eac/_/images/icons/profilepics/anonymous.svg",
+                "width": 48,
+                "height": 48,
+                "isDefault": true
+            },
+            "displayName": "Anonymous"
+        },
+        "when": "2018-09-12T19:33:37.808Z",
+        "message": "",
+        "number": 1,
+        "minorEdit": false,
+        "hidden": false,
+        "_expandable": {
+            "content": "/rest/api/content/65539"
+        },
+        "_links": {
+            "self": "http://localhost:8090/rest/experimental/content/65539/version/1"
+        }
+    },
+    "extensions": {
+        "position": 0
+    },
+    "_expandable": {
+        "container": "/rest/api/space/ds",
+        "metadata": "",
+        "operations": "",
+        "children": "/rest/api/content/65539/child",
+        "restrictions": "/rest/api/content/65539/restriction/byOperation",
+        "ancestors": "",
+        "body": "",
+        "descendants": "/rest/api/content/65539/descendant"
+    },
+    "_links": {
+        "self": "http://localhost:8090/rest/api/content/65539",
+        "base": "http://localhost:8090",
+        "context": "",
+        "collection": "/rest/api/content",
+        "webui": "/pages/viewpage.action?pageId=65539",
+        "edit": "/pages/resumedraft.action?draftId=65539",
+        "tinyui": "/x/AwAB"
+    }
+}
+----
+
+=== Stop/Start Confluence
+
+----
+$ docker stop confluence
+$ docker start confluence
+----
+== Integration alternative 1 - docToolchain
+
+=== Download docToolchain
+
+----
+$ git clone https://github.com/docToolchain/docToolchain.git
+----
+
+=== Create a sample doc (based on template available on arc42)
+
+----
+$ cd docToolchain
+$ ./gradlew -b init.gradle initArc42EN -PnewDocDir=sample
+----
+
+=== Generate sample HTML
+
+----
+$ ./bin/doctoolchain sample generateHTML
+$ open sample/build/html5/arc42-template.html
+----
+
+=== Generate sample PDF
+
+----
+$ ./bin/doctoolchain sample generatePDF
+$ open sample/build/pdf/arc42-template.pdf
+----
+
+=== Configure sample/scripts/Confluence.groovy
+
+----
+$ f=sample/scripts/ConfluenceConfig.groovy; cp $f $f.original
+$ vim $f
+----
+
+----
+$ diff -uNr $f{.original,}
+----
+
+[source,diff]
+----
+--- sample/scripts/ConfluenceConfig.groovy.original	2018-09-12 21:06:54.000000000 +0100
++++ sample/scripts/ConfluenceConfig.groovy	2018-09-12 22:07:46.000000000 +0100
+@@ -12,16 +12,16 @@
+ //
+ // only 'file' or 'url' is allowed. If both are given, 'url' is ignored
+ input = [
+-        [ file: "build/docs/html5/arc42-template-de.html" ],
++        [ file: "build/html5/arc42-template.html" ],
+ //      [ url:  "http://aim42.github.io/htmlSanityCheck/hsc_arc42.html" ],
+ //    	[ file: "asciidocOutput1.html", ancestorId: '' ],
+ //    	[ file: "asciidocOutput2.html", ancestorId: 123456 ]
+ ]
+ 
+ // endpoint of the confluenceAPI (REST) to be used
+-confluenceAPI = 'https://[yourServer]/[context]/rest/api/'
++confluenceAPI = 'http://localhost:8090/rest/api/'
+ // the key of the confluence space to write to
+-confluenceSpaceKey = 'asciidoc'
++confluenceSpaceKey = '_Sandbox'
+ // variable to determine whether ".sect2" sections shall be split from the current page into subpages
+ confluenceCreateSubpages = false
+ 
+@@ -34,6 +34,7 @@
+ // if you want to store it securely, fetch it from some external storage.
+ // you might even want to prompt the user for the password like in this example
+ //confluenceCredentials = "user:${System.console().readPassword('confluence password: ')}".bytes.encodeBase64().toString()
++confluenceCredentials = "admin:confluence".bytes.encodeBase64().toString()
+ 
+ // HTML Content that will be included with every page published
+ // directly after the TOC. If left empty no additional content will be
+----
+
+=== Publish to Confluence
+
+----
+$ ./bin/doctoolchain sample publishToConfluence --no-daemon -q
+----
+
+----
+/Users/pj/labs/confluence-asciidoc-integration-alternatives/docToolchain/sample/build/ppt/images
+docDir: /Users/pj/labs/confluence-asciidoc-integration-alternatives/docToolchain/sample
+confluenceConfigFile: scripts/ConfluenceConfig.groovy
+arc42
+something went wrong - got an http response code 500:
+[statusCode:500, message:java.lang.IllegalArgumentException: parameters should not be empty, reason:Internal Server Error]
+
+FAILURE: Build failed with an exception.
+
+* Where:
+Script '/Users/pj/labs/confluence-asciidoc-integration-alternatives/docToolchain/scripts/publishToConfluence.gradle' line: 22
+
+* What went wrong:
+Execution failed for task ':publishToConfluence'.
+> groovyx.net.http.HttpResponseException: 
+
+* Try:
+Run with --stacktrace option to get the stack trace. Run with --info or --debug option to get more log output.
+
+* Get more help at https://help.gradle.org
+
+BUILD FAILED in 6s
+----
+
+[[alternative2]]
+== Integration alternative 2 - confluence-publisher
+
+----
+$ ip=`ipconfig getifaddr en0`
+$ docker run --rm -e ROOT_CONFLUENCE_URL=http://$ip:8090 \
+   -e USERNAME=admin \
+   -e PASSWORD=confluence \
+   -e SPACE_KEY=_Sandbox \
+   -e ANCESTOR_ID=65584 \
+   -e PAGE_TITLE_PREFIX="Draft - " \
+   -e PAGE_TITLE_SUFFIX=" (V 1.0)" \
+   -v $PWD/src/docs/asciidoc:/var/asciidoc-root-folder \
+   confluencepublisher/confluence-publisher:0.0.0-SNAPSHOT
+----
+
+----
+Exception in thread "main" org.sahli.asciidoc.confluence.publisher.client.http.RequestFailedException: 404  GET http://192.168.1.110:8090/rest/api/content?spaceKey=_Sandbox&title=Draft+-Confluence%2FAsciidoc+integration+alternatives+%28V+1.0%29 
+	at org.sahli.asciidoc.confluence.publisher.client.http.ConfluenceRestClient.lambda$sendRequestAndFailIfNot20x$8(ConfluenceRestClient.java:222)
+	at org.sahli.asciidoc.confluence.publisher.client.http.ConfluenceRestClient.sendRequest(ConfluenceRestClient.java:236)
+	at org.sahli.asciidoc.confluence.publisher.client.http.ConfluenceRestClient.sendRequestAndFailIfNot20x(ConfluenceRestClient.java:219)
+	at org.sahli.asciidoc.confluence.publisher.client.http.ConfluenceRestClient.getPageByTitle(ConfluenceRestClient.java:105)
+	at org.sahli.asciidoc.confluence.publisher.client.ConfluencePublisher.addOrUpdatePage(ConfluencePublisher.java:118)
+	at org.sahli.asciidoc.confluence.publisher.client.ConfluencePublisher.lambda$startPublishingUnderAncestorId$0(ConfluencePublisher.java:79)
+	at java.util.ArrayList.forEach(ArrayList.java:1255)
+	at org.sahli.asciidoc.confluence.publisher.client.ConfluencePublisher.startPublishingUnderAncestorId(ConfluencePublisher.java:77)
+	at org.sahli.asciidoc.confluence.publisher.client.ConfluencePublisher.publish(ConfluencePublisher.java:70)
+	at org.sahli.asciidoc.confluence.publisher.cli.AsciidocConfluencePublisherCommandLineClient.main(AsciidocConfluencePublisherCommandLineClient.java:70)
+----
+
+== Next steps
+
+. Open issues for each project.
+. Try to use other Confluence versions.
+
+== References
+
+* https://hub.docker.com/r/atlassian/confluence-server/
+* https://developer.atlassian.com/server/confluence/confluence-rest-api-examples/
+* https://github.com/docToolchain/docToolchain/
+* https://github.com/alainsahli/confluence-publisher
+* https://github.com/rdmueller/asciidoc2confluence
+* https://community.atlassian.com/t5/Confluence-questions/How-to-publish-externally-generated-html-to-confluence/qaq-p/666020
+* https://confluence.atlassian.com/conf61/import-content-into-confluence-877187816.html
+* https://confluence.atlassian.com/doc/html-macro-38273085.html
+* https://confluence.atlassian.com/confkb/how-to-get-confluence-page-id-648380445.html
+* https://github.com/blacklabelops/confluence
